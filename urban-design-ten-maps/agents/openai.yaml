@@ -1,0 +1,4 @@
+interface:
+  display_name: "一表十图｜城市设计分析"
+  short_description: "用任务书、OSM与规划资料绘制城市设计前期分析图"
+  default_prompt: "使用 $urban-design-ten-maps，根据任务书、基地位置和参考图绘制一表十图。"
