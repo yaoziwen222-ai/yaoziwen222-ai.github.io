@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="蓝水成长笔记：Codex 城市分析一表十图 Skill，含方法、示例、安装与数据边界。">
+<title>城市分析十图 · 蓝水成长笔记</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar"><a class="brand" href="#top">蓝水成长笔记<span> / 城市分析方法</span></a><nav><a href="#maps">十图框架</a><a href="#use">使用方法</a><a href="#files">Skill 文件</a><a href="#limits">数据边界</a></nav></header>
+<main id="top">
+<section class="hero wrap">
+<div class="hero-copy"><div class="eyebrow">OPEN SKILL · URBAN DESIGN</div><h1>城市分析，<br><em>从一表到十图。</em></h1><p class="lead">把基地研究中的数据核查、尺度选择、制图表达与证据边界，整理成一个可复用的 Codex Skill。</p><div class="actions"><a class="button primary" href="#use">查看使用方法 ↗</a><a class="button secondary" href="#files">浏览 Skill 文件 →</a></div><p class="tiny">示例：南京红山森林动物园 · 方法可迁移，数据需逐场地核实</p></div>
+<div class="hero-art"><img src="assets/hongshan-ten-maps.jpg" alt="南京红山森林动物园一表十图示例总览，蓝水成长笔记水印"></div>
+</section>
+<section id="maps" class="section pale"><div class="wrap"><div class="section-head"><span>01 / MAP SYSTEM</span><h2>一表十图</h2><p>先建立数据与证据表，再按研究问题选择尺度和数据，不要求每张图都填满。</p></div><div class="grid">
+<article><b>01</b><h3>城市关系</h3><p>定位基地与城市结构、交通和生态节点的关系。</p></article>
+<article><b>02</b><h3>步行与公共空间</h3><p>识别步行路径、开放空间和可用入口。</p></article>
+<article><b>03</b><h3>空间拓扑</h3><p>梳理边界、廊道、节点和认知结构。</p></article>
+<article><b>04</b><h3>土地利用</h3><p>区分现状功能、规划用地与未知地块。</p></article>
+<article><b>05</b><h3>15 分钟生活圈</h3><p>以路网可达性分析底层服务机会。</p></article>
+<article><b>06</b><h3>道路与停车</h3><p>表达道路等级、交叉口与停车供给。</p></article>
+<article><b>07</b><h3>公共交通</h3><p>连接站点、线路与场地入口。</p></article>
+<article><b>08</b><h3>城市水绿</h3><p>识别公园、水体与生态廊道。</p></article>
+<article><b>09</b><h3>开发强度</h3><p>有可靠数据才表达容积率；可用覆盖率等指标替代并明确标注。</p></article>
+<article><b>10</b><h3>建筑高度</h3><p>区分已建、规划与未知高度，避免推测成事实。</p></article>
+</div></div></section>
+<section id="use" class="section"><div class="wrap"><div class="section-head"><span>02 / GET STARTED</span><h2>怎样使用</h2></div><div class="steps"><div><strong>1</strong><h3>复制 Skill 文件夹</h3><p>在下方逐个查看文件，将 <code>urban-design-ten-maps</code> 文件夹放到项目的 <code>.agents/skills/</code> 中。</p></div><div><strong>2</strong><h3>提供场地资料</h3><p>准备基地位置、红线、任务书、参考案例，以及已有 CAD/GIS、官方资料或开放数据。</p></div><div><strong>3</strong><h3>明确研究范围</h3><p>先请 Codex 核对位置、比例尺、来源和缺失数据，再分图绘制与复核。</p></div></div><div class="prompt"><span>可复制的起始指令</span><button id="copyPrompt" type="button">复制</button><p id="promptText">使用 $urban-design-ten-maps，针对我的基地先建立数据与证据表，再按数据可得性绘制城市分析十图。请逐图注明尺度、来源、现状或规划状态、未知区域和需复核事项。先画第一张供我核对位置与比例尺。</p></div></div></section>
+<section id="files" class="section pale"><div class="wrap"><div class="section-head"><span>03 / SOURCE</span><h2>直接浏览 Skill</h2><p>仓库保留原始文件结构。网页本身也可作为 README，发布到 GitHub Pages 后即可分享一个链接。</p></div><div class="file-list"><a href="urban-design-ten-maps/SKILL.md">SKILL.md <span>主工作流 ↗</span></a><a href="urban-design-ten-maps/references/map-catalog.md">map-catalog.md <span>十图目录 ↗</span></a><a href="urban-design-ten-maps/references/evidence-and-scenarios.md">evidence-and-scenarios.md <span>证据与情景 ↗</span></a><a href="urban-design-ten-maps/references/visual-and-delivery.md">visual-and-delivery.md <span>视觉与交付 ↗</span></a><a href="urban-design-ten-maps/scripts/osm_xml_to_geojson.py">osm_xml_to_geojson.py <span>可选转换脚本 ↗</span></a><a href="urban-design-ten-maps/agents/openai.yaml">openai.yaml <span>界面元数据 ↗</span></a></div></div></section>
+<section id="limits" class="section"><div class="wrap narrow"><div class="section-head"><span>04 / EVIDENCE</span><h2>图像之外，需要诚实的数据说明</h2></div><p>这套 Skill 是方法，不附带城市数据库。红山动物园示例的第 9 图表达建筑覆盖率，并非法定容积率；第 10 图的可靠建筑高度资料不足，未知处保持未知。OSM 的 POI、停车、营业信息与过街信息也可能遗漏。正式设计请结合官方规划、CAD/GIS 与实地核查。</p><p>在开放地理数据较完整的地区，十图可以更顺畅地展开；数据不足时，保留空白和复核清单，比补出未经证实的结论更有价值。</p></div></section>
+</main>
+<footer><div class="wrap"><b>蓝水成长笔记</b><span>城市分析方法 · Codex Skill</span><a href="https://www.xiaohongshu.com/discovery/item/6ad9953c000000002a03122c">查看上一篇十图分享 ↗</a></div></footer>
+<script>document.getElementById('copyPrompt').addEventListener('click',async()=>{const t=document.getElementById('promptText').innerText;await navigator.clipboard.writeText(t);document.getElementById('copyPrompt').innerText='已复制';});</script>
+</body></html>
