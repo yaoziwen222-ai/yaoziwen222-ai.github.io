@@ -1241,3 +1241,148 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)stopTrayCam
 window.addEventListener('pagehide',stopTrayCamera);
 
 </script>
+
+<script>
+function fitCalibrationPlane(points,tolerance){
+  const [a,b,c,d]=points;
+  const det=(b.u-a.u)*(c.v-a.v)-(c.u-a.u)*(b.v-a.v);
+  if(Math.abs(det)<1e-6)throw Error('前三个图像点共线或重合，请选取分散的点。');
+  const axes=['x','y','z'].map(axis=>{
+    const du=((b[axis]-a[axis])*(c.v-a.v)-(c[axis]-a[axis])*(b.v-a.v))/det;
+    const dv=((b.u-a.u)*(c[axis]-a[axis])-(c.u-a.u)*(b[axis]-a[axis]))/det;
+    return [du,dv,a[axis]-du*a.u-dv*a.v];
+  });
+  const u=axes.map(r=>r[0]),v=axes.map(r=>r[1]);
+  const su=Math.hypot(...u),sv=Math.hypot(...v);
+  if(su<1e-8||sv<1e-8)throw Error('机器人坐标点重合，无法建立比例。');
+  const predicted=axes.map(r=>r[0]*d.u+r[1]*d.v+r[2]);
+  const error=Math.hypot(...predicted.map((n,i)=>n-d[['x','y','z'][i]]));
+  const skew=Math.abs(u.reduce((sum,n,i)=>sum+n*v[i],0)/(su*sv));
+  const stretch=Math.abs(su-sv)/Math.max(su,sv);
+  const depth=Math.max(...points.map(p=>p.z))-Math.min(...points.map(p=>p.z));
+  if(depth>tolerance)throw Error('当前支持水平面，请核对 Z 坐标或将取料盘/安装板调平。');
+  if(skew>0.02||stretch>0.02)throw Error('横纵比例或夹角差异超过 2%，请正对平面拍摄并核对选点；当前排布使用原片尺寸。');
+  if(error>tolerance)throw Error('独立检查点误差 '+error.toFixed(3)+' mm，超过本次填写的容许误差。');
+  return {axes,error,scale:(su+sv)/2,skew,stretch,points};
+}
+function mapCalibrationPoint(model,u,v){return model.axes.map(r=>r[0]*u+r[1]*v+r[2]);}
+function calibrationHeading(model,angle){
+  const a=angle*Math.PI/180;
+  return Math.atan2(model.axes[1][0]*Math.cos(a)+model.axes[1][1]*Math.sin(a),
+    model.axes[0][0]*Math.cos(a)+model.axes[0][1]*Math.sin(a))*180/Math.PI;
+}
+let robotCalibration=null;
+const calibrationPanel=document.createElement('details');
+calibrationPanel.id='robotCalibrationPanel';
+calibrationPanel.style.cssText='margin-top:24px;padding:20px;border:1px solid #d2cfc8;border-radius:8px;background:#faf9f6';
+calibrationPanel.innerHTML=`
+<summary style="font-size:20px;font-weight:600">标定取料区与安装板</summary>
+<p>适用于固定正俯拍、水平取料盘和水平安装板。先在机械臂控制器中标定 TCP，切换到同一个基坐标系，使用标定尖端对点并记录 X、Y、Z（mm）。</p>
+<ol><li>取料区选三个分散的基准点，第四点作为独立检查点。点击下方照片记录像素位置，再填写同一点的机器人基坐标。基准点应覆盖石片分布范围，标记与石片参考面尽量等高。</li>
+<li>在实体安装板上标出目标图框的四个角，依次记录左上、右上、左下、右下的机器人坐标。前三点求变换，右下点检查误差。自由成形方案也以完整目标画布为图框，包含外围空白。</li>
+<li>填写本次容许误差并验证。相机、取料盘、安装板、TCP 或机器人基座移动后应重新标定。照片透视、镜头畸变及石片厚度会影响实物落位，需要额外实测。</li></ol>
+<p id="calibrationDimensions"></p>
+<label>本次容许误差（mm） <input id="calibrationTolerance" type="number" min="0.001" step="any" value="2" style="width:100px"></label>
+<p class="hint">初始 2 mm 仅供填写参考，请按拼缝和实验要求调整。四点验证通过仅代表这些检查点符合阈值。</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px">
+<section><h3>取料区</h3><p>选择点号后，点击照片中的同一基准点。</p>
+<select id="sourceCalibrationPoint" aria-label="取料区点号"><option value="0">点 1 · 基准</option><option value="1">点 2 · 基准</option><option value="2">点 3 · 基准</option><option value="3">点 4 · 独立检查</option></select>
+<canvas id="calibrationSource" style="width:100%;height:auto;cursor:crosshair;background:white"></canvas>
+<div id="sourceCalibrationRows"></div></section>
+<section><h3>安装板</h3><p>在实体板上标出目标画布的四角。两区的 mm/px 比例需一致，保留石片真实大小。</p>
+<div id="targetCalibrationRows"></div></section></div>
+<div class="row"><button id="solveCalibration" class="alt">计算并验证标定</button><button id="robotCoordinates" disabled>导出机械臂基坐标（CSV）</button><button id="calibrationRecord" class="alt" disabled>下载标定记录</button></div>
+<p id="calibrationResult" role="status" aria-live="polite">锁定方案后可填写标定。</p>
+<p class="hint">基坐标表输出石片外接框中心及参考面的 Z、平面转角增量。抓取点偏移、石片厚度、工具姿态、抬升路径和控制器指令需在硬件端配置。</p>`;
+$('exportPanel').append(calibrationPanel);
+function calibrationInputs(prefix,labels){
+  $(prefix+'CalibrationRows').innerHTML=labels.map((label,i)=>`<fieldset style="margin:10px 0;padding:10px"><legend>${label}</legend>
+  ${['u','v','x','y','z'].map(key=>`<label style="display:inline-block;margin:4px">${({u:'图像 X(px)',v:'图像 Y(px)',x:'基坐标 X(mm)',y:'基坐标 Y(mm)',z:'基坐标 Z(mm)'})[key]}<input aria-label="${prefix} ${i+1} ${key}" id="${prefix}Cal${i}${key}" type="number" step="any" style="display:block;width:110px" ${prefix==='target'&&(key==='u'||key==='v')?'readonly':''}></label>`).join('')}</fieldset>`).join('');
+}
+calibrationInputs('source',['点 1','点 2','点 3','点 4 · 独立检查']);
+calibrationInputs('target',['左上','右上','左下','右下 · 独立检查']);
+function calibrationSignature(){
+  const p=plans[choice];
+  return JSON.stringify([locked?.id,acquisition.batchId,acquisition.inventoryRevision,p?.width,p?.height,
+    original?.width,original?.height,stones.filter(s=>s.active).map(s=>s.id)]);
+}
+function invalidateCalibration(){
+  robotCalibration=null;$('robotCoordinates').disabled=true;$('calibrationRecord').disabled=true;
+  $('calibrationResult').textContent='标定尚未验证。填写后点击“计算并验证标定”。';
+}
+calibrationPanel.addEventListener('input',invalidateCalibration);
+function refreshCalibrationPanel(){
+  invalidateCalibration();
+  const p=plans[choice];if(!p||!original)return;
+  $('calibrationDimensions').textContent='库存照片 '+original.width+' × '+original.height+' px；目标图框 '+p.width+' × '+p.height+' px。';
+  const c=$('calibrationSource');c.width=original.width;c.height=original.height;c.getContext('2d').drawImage(original,0,0);
+  [[0,0],[p.width,0],[0,p.height],[p.width,p.height]].forEach((point,i)=>{['u','v'].forEach((key,j)=>$('targetCal'+i+key).value=point[j])});
+}
+calibrationPanel.addEventListener('toggle',()=>{if(calibrationPanel.open && robotCalibration?.signature!==calibrationSignature())refreshCalibrationPanel()});
+$('calibrationSource').onclick=e=>{
+  const c=e.currentTarget,r=c.getBoundingClientRect(),i=Number($('sourceCalibrationPoint').value);
+  $('sourceCal'+i+'u').value=((e.clientX-r.left)*c.width/r.width).toFixed(3);
+  $('sourceCal'+i+'v').value=((e.clientY-r.top)*c.height/r.height).toFixed(3);
+  invalidateCalibration();const g=c.getContext('2d');g.drawImage(original,0,0);
+  for(let n=0;n<4;n++){const u=$('sourceCal'+n+'u').value,v=$('sourceCal'+n+'v').value;if(u===''||v==='')continue;g.fillStyle='#b34b30';g.beginPath();g.arc(+u,+v,5,0,Math.PI*2);g.fill();g.font='20px sans-serif';g.fillText(String(n+1),+u+8,+v-8)}
+  $('sourceCalibrationPoint').value=String(Math.min(3,i+1));
+};
+function readCalibrationRows(prefix){
+  return Array.from({length:4},(_,i)=>Object.fromEntries(['u','v','x','y','z'].map(key=>{
+    const value=$(prefix+'Cal'+i+key).value;
+    if(value.trim()===''||!Number.isFinite(Number(value)))throw Error('请完整填写两区四个点的坐标。');
+    return [key,Number(value)];
+  })));
+}
+$('solveCalibration').onclick=()=>{
+  invalidateCalibration();
+  try{
+    if(!locked||locked.index!==choice)throw Error('请先锁定当前排布方案。');
+    const tolerance=Number($('calibrationTolerance').value);
+    if(!Number.isFinite(tolerance)||tolerance<=0)throw Error('请填写大于零的容许误差。');
+    const source=fitCalibrationPlane(readCalibrationRows('source'),tolerance);
+    const target=fitCalibrationPlane(readCalibrationRows('target'),tolerance);
+    const dimensions=original;
+    for(const p of source.points)if(p.u<0||p.v<0||p.u>dimensions.width||p.v>dimensions.height)throw Error('取料区点超出照片范围。');
+    if(Math.abs(source.scale-target.scale)/source.scale>0.02)throw Error('取料照片和安装板的比例相差超过 2%，请按库存实宽调整目标图框的实体尺寸。');
+    const handedness=m=>Math.sign(m.axes[0][0]*m.axes[1][1]-m.axes[0][1]*m.axes[1][0]);
+    if(handedness(source)!==handedness(target))throw Error('两区坐标出现镜像，请核对安装板左上、右上、左下的顺序。');
+    robotCalibration={schema:'stone-plane-calibration/1',status:'reference_coordinates_verified',
+      signature:calibrationSignature(),batchId:acquisition.batchId,planId:locked.id,
+      createdAt:new Date().toISOString(),unit:'mm',frame:'robot_base',tolerance,source,target,
+      limitations:['horizontal_planes','affine_near_orthographic','bbox_center_reference',
+        'tcp_and_grasp_offset_required','controller_adapter_required']};
+    $('robotCoordinates').disabled=false;$('calibrationRecord').disabled=false;
+    $('calibrationResult').textContent='独立检查点误差：取料区 '+source.error.toFixed(3)+' mm，安装板 '+target.error.toFixed(3)+' mm。比例 '+source.scale.toFixed(5)+' mm/px。可导出基坐标参考点。';
+  }catch(error){$('calibrationResult').textContent=error.message}
+};
+function currentCalibration(){
+  if(!robotCalibration||robotCalibration.signature!==calibrationSignature()){
+    invalidateCalibration();throw Error('方案或库存已变化，请重新验证标定。');
+  }
+  return robotCalibration;
+}
+$('calibrationRecord').onclick=()=>{
+  try{const c=currentCalibration();download(new Blob([JSON.stringify(c,null,2)],{type:'application/json'}),'标定记录_'+c.planId+'.json')}
+  catch(e){$('calibrationResult').textContent=e.message}
+};
+$('robotCoordinates').onclick=()=>{
+  try{
+    const cal=currentCalibration(),p=plans[choice],inventory=new Map(stones.map(s=>[s.id,s]));
+    const rows=[['石片编号','取料参考X(mm)','取料参考Y(mm)','取料参考面Z(mm)','安装参考X(mm)','安装参考Y(mm)','安装参考面Z(mm)',
+      '基坐标XY平面转角增量(度逆时针)','原图顺时针转角(度)','参考点','库存批次','方案编号','取料检查误差(mm)','安装检查误差(mm)','控制器适配状态']];
+    for(const pose of p.layout){
+      const s=inventory.get(pose.id),source=mapCalibrationPoint(cal.source,s.minX+s.canvas.width/2,s.minY+s.canvas.height/2),
+      target=mapCalibrationPoint(cal.target,pose.x,pose.y);
+      const delta=calibrationHeading(cal.target,pose.angle)-calibrationHeading(cal.source,0);
+      rows.push([s.id,...source,...target,((delta+180)%360+360)%360-180,pose.angle,'外接框中心；Z为标定参考面',cal.batchId,cal.planId,cal.source.error,cal.target.error,'待配置TCP/抓取点/高度/姿态/路径/控制器']);
+    }
+    const csv=rows.map(row=>row.map(v=>'"'+String(typeof v==='number'?Number(v.toFixed(5)):v).replaceAll('"','""')+'"').join(',')).join('\r\n');
+    download(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}),'机械臂基坐标_'+letterText()+'_'+cal.planId+'.csv');
+  }catch(e){$('calibrationResult').textContent=e.message}
+};
+new MutationObserver(()=>{
+  if(robotCalibration?.signature!==calibrationSignature())invalidateCalibration();
+}).observe($('json'),{attributes:true,attributeFilter:['disabled']});
+
+</script>
