@@ -1,0 +1,23 @@
+/* Preserve the published two-column layout and compact bottom readout. */
+:root{--paper:#fff}
+.meshLayout,.meshSettings,#meshPanel,.meshSettings .fields select{background:#fff}
+.meshSettings .fields label{font-size:12px}
+.meshSettings .settingSliders{border-top:0;padding-top:0;margin-top:18px}
+.scenarioControls{display:grid;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid #ccd5c8}
+.scenarioHeading{font-size:13px;font-weight:600;margin-bottom:1px}
+.scenarioGroup>span{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+.segmentButtons{display:flex;border:1px solid #bcc8b8;border-radius:4px;overflow:hidden}
+.segmentButtons button{flex:1;min-width:0;border:0;border-right:1px solid #ccd5c8;border-radius:0;background:#fff;font-size:13px;line-height:1.3;min-height:28px;padding:4px 3px}
+.segmentButtons button:last-child{border-right:0}
+.segmentButtons button:hover{background:#edf3ee}
+.segmentButtons button[aria-pressed=true]{background:#254a3c;color:#fff;font-weight:600}
+.segmentButtons button:focus-visible{outline:2px solid #ce8550;outline-offset:-3px}
+.meshSettings #scenarioStatus{margin:0;font-size:12px;color:var(--muted);line-height:1.4}
+.meshSettings #scenarioStatus.custom{color:#8b512b}
+.meshHead h2{font-size:18px}
+.meshDetails{row-gap:7px}
+#meshComparison{flex-basis:100%;text-align:right;color:var(--muted);font-size:12px;min-height:18px}
+#meshComparison:empty{display:none}
+#meshMarkers button:disabled{opacity:.5;cursor:default}
+.surfaceMethod #choice:empty{display:none}
+@media(max-width:760px){#meshComparison{text-align:left}.meshHead h2{font-size:16px}}

@@ -1,13 +1,14 @@
 "use strict";
 const data = window.study;
 const groups = {
+  All: {name:"Overall · 66 cities",color:"#367451"},
   C: {name:"Temperate", color:"#795891", pin:"#d6b4f5", city:"Melbourne"},
   A: {name:"Tropical", color:"#16856e", pin:"#79dfb2", city:"Mumbai"},
   B: {name:"Arid", color:"#b27237", pin:"#ffbe74", city:"Beijing"},
   D: {name:"Cold", color:"#326BA0", pin:"#a9d2f0", city:"Moscow"}
 };
 const byId = id => document.getElementById(id);
-const state = {zone:"C",city:"Melbourne"};
+const state = {zone:"All",city:"Melbourne"};
 const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 const fmt = n => n.toLocaleString("en-US");
 const signed = (n, digits=1) => (n>0?"+":"")+n.toFixed(digits);
@@ -47,16 +48,8 @@ function renderMap() {
   byId("mapCity").value=state.city;
   byId("mapFocus").innerHTML="<strong>"+escapeHtml(selected.city)+"</strong><small>"+groups[selected.climate_group].name+" · "+months[selected.start_month-1]+"–"+months[selected.end_month-1]+" warm season · "+fmt(selected.grids)+" grids</small>";
 }
-function selectCity(name) {
-  const city=data.cities.find(c=>c.city===name);
-  setZone(city.climate_group,city.city);
-}
-function setZone(z,city=groups[z].city) {
-  state.zone=z;state.city=city;
-  byId("balClimate").value=z;
-  tabGroup("climates",z);
-  renderMap();renderPlots();initializeSliders();
-}
+function selectCity(name) {state.city=name;renderMap();}
+function setZone(z) {state.zone=z;tabGroup('climates',z);renderPlots();}
 function plotFrame(id, xMax, yMin, yMax, xTitle, yTitle, xLabel, yLabel, ticks) {
   const el=byId(id), rect=el.getBoundingClientRect(), w=rect.width,h=rect.height;
   const ratio=window.devicePixelRatio||1;
@@ -76,7 +69,7 @@ function plotFrame(id, xMax, yMin, yMax, xTitle, yTitle, xLabel, yLabel, ticks) 
 }
 function renderPlots() {
   const z=state.zone, g=groups[z], pts=data.points[z];
-  const cities=data.cities.filter(c=>c.climate_group===z);
+  const cities=data.cities.filter(c=>z==="All"||c.climate_group===z);
   byId("sample").textContent=cities.length+" cities · "+fmt(pts.length)+" grids";
   byId("medians").textContent="C "+data.medians.C.toFixed(3)+" · A "+pct(data.medians.A);
   const d=plotFrame("distribution",1,0,1,"Vegetation concentration (C)","Road-neighborhood cover (A)",n=>n.toFixed(2),n=>pct(n,0),[0,.25,.5,.75,1]);
@@ -106,105 +99,135 @@ function renderPlots() {
     ctx.beginPath();arr.forEach((r,i)=>ctx[i?"lineTo":"moveTo"](p.x(r.x),p.y(r[outcome])));ctx.lineWidth=2.4;ctx.strokeStyle="#367451";ctx.stroke();
   }
   for(const row of bins){ctx.beginPath();ctx.arc(p.x(row.mid),p.y(row[outcome]),3,0,2*Math.PI);ctx.fillStyle="white";ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle="#36493f";ctx.stroke();}
-  byId("response").setAttribute("aria-label",g.name+" fitted change in "+(gvi?"GVI":"LST deviation")+" by "+variable+", with "+bins.length+" supported bin means.");
+  byId("response").setAttribute("aria-label",g.name+" fitted change in "+(gvi?"GVI":"LST deviation")+" by "+variable+", with pointwise 95 percent city-jackknife confidence intervals.");
 }
-const sliders = [
-  ["q",100,"%"], ["road",1," km/km²"], ["built",100,"%"], ["height",1," m"]
-];
-let settings = [];
-function drawableSurface(values) {
-  const key=configurations.settingKey(state.zone,values);
+const sliders = [["q",100,"%"],["road",1," km/km²"],["built",100,"%"],["height",1," m"]];
+let settings=[], activePreset=null;
+const supportedCache=new Map();
+function supportedSurface(values) {
+  const cacheKey=values.join('|');
+  if(supportedCache.has(cacheKey))return supportedCache.get(cacheKey);
+  const key=configurations.settingKey('All',values);
   const surface=configurations.fit(key,values);
-  if(!surface) return null;
-  // The renderer needs three corners of one lattice cell to make a face.
-  const corners=new Uint8Array(34*34);
-  for(const [x,y] of surface.points){
-    const cell=34*y+x;
-    for(const neighbor of [cell,cell+1,cell+34,cell+35]){
-      if(++corners[neighbor]===3) return {key,surface};
+  let result=null;
+  if(surface){
+    // At least three neighboring lattice corners are needed for a visible face.
+    const corners=new Uint8Array(34*34);
+    for(const [x,y] of surface.points){
+      const cell=34*y+x;
+      for(const neighbor of [cell,cell+1,cell+34,cell+35]){
+        if(++corners[neighbor]===3){result={key,surface};break;}
+      }
+      if(result)break;
     }
   }
-  return null;
+  if(supportedCache.size>=160)supportedCache.delete(supportedCache.keys().next().value);
+  supportedCache.set(cacheKey,result);return result;
 }
 function reachableSetting(i,target) {
   const scale=sliders[i][1]*10;
-  let good=Math.round(settings[i]*scale);
-  const candidate=settings.slice();
-  let result=null;
-  function tryTick(tick) {
-    candidate[i]=tick/scale;
-    const tested=drawableSurface(candidate);
-    if(!tested) return false;
-    good=tick; result=tested; return true;
+  let goodTick=Math.round(settings[i]*scale),badTick=Math.round(target*scale);
+  let value=settings[i],result=supportedSurface(settings);
+  function tryTick(tick){
+    // Use the same decimal-to-model conversion as the native range input.
+    const candidate=settings.slice();candidate[i]=Number((tick/10).toFixed(1))/sliders[i][1];
+    const tested=supportedSurface(candidate);
+    if(!tested)return false;
+    goodTick=tick;value=candidate[i];result=tested;return true;
   }
-  if(target!==good && !tryTick(target)){
-    let bad=target;
-    while(Math.abs(bad-good)>1){
-      const mid=Math.trunc((bad+good)/2);
-      if(!tryTick(mid)) bad=mid;
+  if(badTick!==goodTick&&!tryTick(badTick)){
+    while(Math.abs(badTick-goodTick)>1){
+      const mid=Math.trunc((badTick+goodTick)/2);
+      if(!tryTick(mid))badTick=mid;
     }
   }
-  return {tick:good,result};
+  // No monotonic-support assumption: every accepted endpoint and user value is
+  // actually evaluated. An unsupported interior gap stops at a valid boundary.
+  return {value,result};
 }
-function updateSliderLimits(skip=-1) {
+let scenarioSelection=['Mid','Higher','Higher'];
+function showScenarioSelection(custom=false) {
+  document.querySelectorAll('[data-scenario-axis]').forEach(button=>{
+    button.setAttribute('aria-pressed',String(button.dataset.value===scenarioSelection[Number(button.dataset.scenarioAxis)]));
+  });
+  const status=byId('scenarioStatus');
+  status.textContent=custom?'Custom scenario':scenarioSelection.every(Boolean)?'Preset scenario':'Choose all three groups to load a preset.';
+  status.classList.toggle('custom',custom||!scenarioSelection.every(Boolean));
+}
+const allSamples=Object.values(window.surfaceContext.samples).flat();
+function scenarioLabel(key) {
+  const [,green,road,built]=key.split('|');
+  return (green==='Mid'?'Medium':green)+' cover · '+(road==='Lower'?'low':'high')+' road / '+(built==='Lower'?'low':'high')+' built';
+}
+function updateSliderLimits() {
+  const transformed=r=>[r[0],Math.log1p(r[1]),r[2],Math.log1p(r[3])];
+  const target=transformed(settings), tolerance=[.10,.55,.12,.6];
   sliders.forEach(([name,scale],i)=>{
-    if(i===skip) return;
-    const [lo,hi]=window.surfaceContext.ranges[state.zone][i];
-    const input=byId(name+"Slider");
-    input.min=reachableSetting(i,Math.floor(lo*scale*10)).tick/10;
-    input.max=reachableSetting(i,Math.ceil(hi*scale*10)).tick/10;
-    input.value=settings[i]*scale;
-    input.disabled=input.min===input.max;
+    const local=allSamples.filter(r=>transformed(r).every((v,j)=>j===i||Math.abs(v-target[j])<=tolerance[j]));
+    const values=local.map(r=>r[i]);
+    const [fallbackLow,fallbackHigh]=window.surfaceContext.ranges.All[i];
+    const low=values.length?Math.min(...values):fallbackLow;
+    const high=values.length?Math.max(...values):fallbackHigh;
+    const input=byId(name+'Slider');
+    const validLow=reachableSetting(i,Math.ceil(low*scale*10)/(scale*10)).value;
+    const validHigh=reachableSetting(i,Math.floor(high*scale*10)/(scale*10)).value;
+    input.min=(Math.min(validLow,settings[i])*scale).toFixed(6);
+    input.max=(Math.max(validHigh,settings[i])*scale).toFixed(6);
+    input.value=settings[i]*scale;input.disabled=input.min===input.max;
+    input.title='Supported range: '+Number(input.min).toFixed(1)+sliders[i][2]+' – '+Number(input.max).toFixed(1)+sliders[i][2];
+    const text=(settings[i]*scale).toFixed(1)+sliders[i][2];
+    byId(name+'Value').textContent=text;input.setAttribute('aria-valuetext',text);
   });
 }
-function showSlider(i) {
-  const [name,scale,unit]=sliders[i], text=(settings[i]*scale).toFixed(1)+unit;
-  byId(name+"Value").textContent=text;
-  byId(name+"Slider").setAttribute("aria-valuetext",text);
+function renderBalance(key,surface,custom=false) {
+  responseSurface.update(key,surface);
+  scenarioSelection=custom?[null,null,null]:key.split('|').slice(1);
+  showScenarioSelection(custom);
+  byId('meshSubtitle').textContent=custom?'Custom scenario · 66-city sample':scenarioLabel(key);
+  byId('choice').textContent='';
+  byId('meshMarkers').querySelectorAll('button').forEach(b=>b.disabled=!surface);
+  if(surface) {
+    const details=surface.localGrids?' · '+surface.localGrids.toLocaleString('en-US')+' nearby grids / '+surface.localCities+' cities':'';
+    byId('meshCaption').textContent=surface.points.length.toLocaleString('en-US')+' supported configurations'+details;
+  }
 }
-function initializeSliders() {
-  const previousDefault=state.zone+"|High|Higher|Higher";
-  const key=window.surfaceModels[previousDefault]?previousDefault:state.zone+"|Mid|Higher|Higher";
+function initializeSliders(key='All|Mid|Higher|Higher') {
+  activePreset=key;
   settings=window.surfaceContext.presets[key].slice();
-  updateSliderLimits();
-  sliders.forEach((_,i)=>showSlider(i));
-  renderBalance(key,window.surfaceModels[key],false);
+  updateSliderLimits();renderBalance(key,window.surfaceModels[key]);
 }
 sliders.forEach(([name,scale],i)=>{
-  const input=byId(name+"Slider");
+  const input=byId(name+'Slider');
   input.oninput=()=>{
-    const requested=Math.round(input.value*10);
-    const {tick,result}=reachableSetting(i,requested);
-    input.value=tick/10;
-    if(result){
-      settings[i]=tick/(scale*10);
-      showSlider(i);
-      renderBalance(result.key,result.surface,true);
+    const requested=Number(input.value)/scale;
+    const {value,result}=reachableSetting(i,requested);
+    // Commit only a setting that has a drawable, supported surface. Never clear
+    // the last valid surface while the thumb crosses an unsupported combination.
+    const changed=Math.abs(value-settings[i])>1e-12;
+    if(result&&changed){
+      settings[i]=value;activePreset=null;renderBalance(result.key,result.surface,true);
     }
+    if(Math.abs(value-requested)>1e-9){
+      if(requested>value)input.max=(value*scale).toFixed(6);
+      else input.min=(value*scale).toFixed(6);
+    }
+    input.value=settings[i]*scale;
+    const text=(settings[i]*scale).toFixed(1)+sliders[i][2];
+    byId(name+'Value').textContent=text;input.setAttribute('aria-valuetext',text);
   };
-  input.onchange=()=>updateSliderLimits(i);
+  input.onchange=updateSliderLimits;
 });
-function renderBalance(key,surface,custom) {
-  const [z,green,road,built]=key.split("|");
-  responseSurface.update(key,surface);
-  byId("choice").textContent="";
-  if(custom){
-    byId("seasonal").textContent="Slider estimates use local warm-season temperatures. Annual and cold-season comparisons were calculated at the reference conditions for each study setting.";
-    return;
-  }
-  const match=a=>a.climate_group===z&&a.green_band===green&&a.road_band===road&&a.built_band===built;
-  const b=data.balance.find(match);
-  byId("choice").innerHTML=b?'<h3>Warm-season balance</h3><div class="numbers"><div><strong>'+b.C.toFixed(2)+'</strong><small>Concentration (C)</small></div><div><strong>'+pct(b.A)+'</strong><small>Road-neighborhood cover (A)</small></div></div><p class="rule">Predicted change from the setting anchor (C '+b.anchor_C.toFixed(2)+', A '+pct(b.anchor_A)+')<br>GVI <b>'+signed(b.gvi_difference_pp)+' pp</b> · LST deviation <b>'+signed(b.lst_difference_c,2)+' °C</b></p>':'<h3>Insufficient sample support</h3><p>This setting does not meet the observational support criteria. Select another setting to view a fitted configuration.</p>';
-  const a=data.annual.find(match), s=data.seasons.find(match), value=(c,v)=>"C "+c.toFixed(2)+", A "+pct(v);
-  byId("seasonal").innerHTML='<p><b>Annual reference · 66 cities, 32,812 matched grids.</b><br>'+(a?"Warm "+value(a.warm_C,a.warm_A)+" · Annual "+value(a.annual_C,a.annual_A):"No supported pair for this setting.")+'</p><p><b>Seasonal supplement · 46 cities, 13,861 matched grids.</b><br>'+(s?"Warm "+value(s.Warm_C,s.Warm_A)+" · Cold "+value(s.Cold_C,s.Cold_A):"No supported pair for this setting.")+"</p>";
+byId('scenarioControls').addEventListener('click',e=>{
+  const button=e.target.closest('[data-scenario-axis]');if(!button)return;
+  scenarioSelection[Number(button.dataset.scenarioAxis)]=button.dataset.value;
+  if(scenarioSelection.every(Boolean))initializeSliders(['All',...scenarioSelection].join('|'));
+  else showScenarioSelection();
+});
+for(const city of data.cities)byId('mapCity').add(new Option(city.city,city.city));
+for(const [z,g] of Object.entries(groups))if(z!=='All'){
+  const item=document.createElement('span');item.innerHTML='<i style="background:'+g.pin+'"></i>'+g.name;byId('mapKey').append(item);
 }
-for(const city of data.cities)byId("mapCity").add(new Option(city.city,city.city));
-for(const [z,g] of Object.entries(groups)){
-  byId("balClimate").add(new Option(g.name,z));
-  const item=document.createElement("span");item.innerHTML='<i style="background:'+g.pin+'"></i>'+g.name;byId("mapKey").append(item);
-}
-byId("mapCity").onchange=e=>selectCity(e.target.value);
-byId("balClimate").onchange=e=>setZone(e.target.value);
-for(const id of ["outcome","variable"])byId(id).onchange=renderPlots;
-setZone("C");
-new ResizeObserver(()=>renderPlots()).observe(byId("distribution").parentElement);
+byId('mapCity').onchange=e=>selectCity(e.target.value);
+for(const id of ['outcome','variable'])byId(id).onchange=renderPlots;
+renderMap();setZone('All');initializeSliders();
+new ResizeObserver(renderPlots).observe(byId('distribution').parentElement);

@@ -7,6 +7,7 @@ const responseSurface = (() => {
   const labels = {"Balanced":"B", "GVI maximum":"G", "LST minimum":"T"};
   const ink = "#22443a";
   const view = {angle:-.70, tilt:.44};
+  let selectedGoal="Balanced";
   let model, faces=[], projected=[], selected=null, drag=null, limits;
   const signedNumber = (v,n) => (v>0?"+":"")+v.toFixed(n);
   const range = a => [Math.min(...a),Math.max(...a)];
@@ -28,11 +29,15 @@ const responseSurface = (() => {
   }
   function readout() {
     const el=id("meshReadout");
-    if(!model||selected===null){el.textContent="";return;}
+    if(!model||selected===null){el.textContent="";id("meshComparison").textContent="";return;}
     const p=model.points[selected];
     const tags=Object.keys(labels).filter(k=>model.markers[k]===selected);
-    el.innerHTML="<strong>"+(tags.join(" / ")||"Selected configuration")+"</strong><span>C "+p[2].toFixed(3)+"</span><span>A "+(100*p[3]).toFixed(1)+"%</span><span>GVI "+signedNumber(p[4],2)+" pp</span><span>LST "+signedNumber(p[5],2)+" °C</span>";
-    id("meshMarkers").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(model.markers[b.dataset.mark]===selected)));
+    el.innerHTML="<strong>"+(selectedGoal || tags.join(" / ") || "Selected configuration")+"</strong><span>C "+p[2].toFixed(3)+"</span><span>A "+(100*p[3]).toFixed(1)+"%</span><span>ΔGVI "+signedNumber(p[4],2)+" pp</span><span>ΔLST "+signedNumber(p[5],2)+" °C</span>";
+    id("meshMarkers").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(selectedGoal===b.dataset.mark)));
+    const b=model.points[model.markers.Balanced];
+    id('meshComparison').textContent=selected===model.markers.Balanced
+      ? (tags.length===3?'Highest GVI and lowest LST coincide with the balanced configuration.':tags.length===2?'The balanced configuration coincides with '+(tags.includes('GVI maximum')?'the highest-GVI point.':'the lowest-LST point.'):'Changes are relative to the scenario reference.')
+      : 'Compared with balanced: ΔGVI '+signedNumber(p[4]-b[4],2)+' pp · ΔLST '+signedNumber(p[5]-b[5],2)+' °C';
   }
   function draw() {
     const w=canvas.clientWidth,h=canvas.clientHeight;
@@ -85,7 +90,7 @@ const responseSurface = (() => {
     const left=base.reduce((a,b)=>a[0]<b[0]?a:b);
     const c=[[0,0],[1,0],[1,1],[0,1]][base.indexOf(left)];
     const top=screen(...c,1);path([left,top],null,"#859786");
-    for(const f of [0,.5,1]){
+    for(const f of [0,norm(0,limits.z),1]){
       const p=screen(...c,f);label(signedNumber(limits.z[0]+f*(limits.z[1]-limits.z[0]),1),p[0]-5,p[1]+3,"right","#566959",400,10);
     }
     label("Δ GVI (pp)",Math.max(5,top[0]-15),top[1]-8,"left",ink,600);
@@ -113,10 +118,11 @@ const responseSurface = (() => {
     canvas.tabIndex=empty?-1:0;
     id("meshEmpty").textContent=empty?"Insufficient observational support for this setting. Choose another combination.":"";
     id("meshCaption").textContent=empty?"":model.points.length.toLocaleString("en-US")+" supported configurations";
-    id("meshSubtitle").textContent=[{A:"Tropical",B:"Arid",C:"Temperate",D:"Cold"}[key[0]],"Local warm season"].join(" · ");
+    id("meshSubtitle").textContent="66-city sample · Local warm season";
     if(!empty){
       const points=model.points;
-      limits={x:range(points.map(p=>p[2])),y:range(points.map(p=>p[3])),z:range(points.map(p=>p[4])),t:range(points.map(p=>p[5]))};
+      const xr=range(points.map(p=>p[2])),yr=range(points.map(p=>p[3])),zr=range(points.map(p=>p[4])),tr=range(points.map(p=>p[5]));
+      limits={x:[0,Math.max(.65,Math.ceil(xr[1]*20)/20)],y:[0,Math.max(.8,Math.ceil(yr[1]*10)/10)],z:[Math.min(-6,Math.floor(zr[0])),Math.max(5,Math.ceil(zr[1]))],t:[Math.min(-1,Math.floor(tr[0]*2)/2),Math.max(1,Math.ceil(tr[1]*2)/2)]};
       const map=new Map(points.map(([x,y],i)=>[[x,y].join(","),i]));
       faces=[];const used=new Set();
       for(let y=0;y<32;y++)for(let x=0;x<32;x++){
@@ -124,7 +130,7 @@ const responseSurface = (() => {
         if(corners.length>=3){faces.push(corners);corners.forEach(i=>used.add(i));}
       }
       model.isolated=points.map((_,i)=>i).filter(i=>!used.has(i));
-      selected=model.markers.Balanced;
+      selected=model.markers.Balanced;selectedGoal="Balanced";
       id("coldLimit").textContent=signedNumber(limits.t[0],2)+" °C";
       id("warmLimit").textContent=signedNumber(limits.t[1],2)+" °C";
       id("meshAnchor").textContent="Predicted changes relative to C "+model.anchor[0].toFixed(3)+" and A "+(model.anchor[1]*100).toFixed(1)+"% in this setting.";
@@ -137,7 +143,7 @@ const responseSurface = (() => {
   function pick(x,y){
     let best=16,nearest=null;
     projected.forEach((p,i)=>{const dist=Math.hypot(x-p[0],y-p[1]);if(dist<best){best=dist;nearest=i;}});
-    if(nearest!==null){selected=nearest;readout();draw();}
+    if(nearest!==null){selected=nearest;selectedGoal=null;readout();draw();}
   }
   canvas.onpointerdown=e=>{if(!model)return;drag={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};canvas.setPointerCapture(e.pointerId);};
   canvas.onpointermove=e=>{
@@ -153,7 +159,7 @@ const responseSurface = (() => {
     if(turns[e.key]){e.preventDefault();rotate(...turns[e.key]);}
   };
   id("resetMesh").onclick=()=>{view.angle=-.70;view.tilt=.44;draw();};
-  id("meshMarkers").onclick=e=>{const btn=e.target.closest("[data-mark]");if(btn&&model){selected=model.markers[btn.dataset.mark];readout();draw();}};
+  id("meshMarkers").onclick=e=>{const btn=e.target.closest("[data-mark]");if(btn&&model){selected=model.markers[btn.dataset.mark];selectedGoal=btn.dataset.mark;readout();draw();}};
   new ResizeObserver(draw).observe(canvas);
   return {update};
 })();

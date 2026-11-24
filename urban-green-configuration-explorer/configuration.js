@@ -39,7 +39,7 @@ const configurations = (() => {
     const axes=[4,5].map(k=>local.map(r=>r[k]).sort((a,b)=>a-b));
     const coords=axes.map(a=>Array.from({length:33},(_,i)=>quantile(a,.05)+(quantile(a,.95)-quantile(a,.05))*i/32));
     const median=axes.map(a=>quantile(a,.5)), points=[];
-    const coefficients=data.configTerms[key[0]].concat(data.interactions);
+    const coefficients=data.configTerms.All.concat(data.interactions);
     const modifiers=[q-.30,logRoad-3.2,(built/.12+(logHeight-2.3)/.6)/2];
     // Only C- and A-dependent terms survive subtraction of the setting anchor.
     const terms=coords.map((axis,k)=>axis.map(v=>spline(v,k===0?[.05,.22,.40,.65]:[.01,.12,.30,.65])));
@@ -71,7 +71,7 @@ const configurations = (() => {
       const a=(gmax-p[4])/dg,b=(p[5]-tmin)/dt, loss=Math.max(a,b);
       if(loss<best || (loss===best && a+b<tie)){best=loss;tie=a+b;markers.Balanced=i;}
     });
-    return {points,markers,anchor:anchor.slice(0,2)};
+    return {points,markers,anchor:anchor.slice(0,2),localGrids:local.length,localCities:new Set(local.map(r=>r[6])).size};
   }
   return {settingKey,fit};
 })();
