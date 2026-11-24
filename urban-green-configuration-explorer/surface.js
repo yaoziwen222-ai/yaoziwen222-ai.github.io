@@ -6,7 +6,7 @@ const responseSurface = (() => {
   const ctx = canvas.getContext("2d");
   const labels = {"Balanced":"B", "GVI maximum":"G", "LST minimum":"T"};
   const ink = "#22443a";
-  const view = {angle:-.70, tilt:.44};
+  const view = {angle:-1.02, tilt:.52};
   let selectedGoal="Balanced";
   let model, faces=[], projected=[], selected=null, drag=null, limits;
   const signedNumber = (v,n) => (v>0?"+":"")+v.toFixed(n);
@@ -49,13 +49,13 @@ const responseSurface = (() => {
     const {angle,tilt}=view, co=Math.cos(angle),si=Math.sin(angle),ce=Math.cos(tilt),se=Math.sin(tilt);
     const project=(x,y,z)=>{
       const dx=x-.5,dy=y-.5,depth=dx*si+dy*co;
-      return [dx*co-dy*si,-depth*se-z*.48*ce,depth*ce-z*.48*se];
+      return [dx*co-dy*si,-depth*se-z*.82*ce,depth*ce-z*.82*se];
     };
     const corners=[];
     for(const x of [0,1])for(const y of [0,1])for(const z of [0,1])corners.push(project(x,y,z));
     const xx=range(corners.map(p=>p[0])),yy=range(corners.map(p=>p[1]));
     const scale=Math.min((w-(w<430?74:108))/(xx[1]-xx[0]),(h-80)/(yy[1]-yy[0]));
-    const horizontalScale=Math.min((w-(w<430?74:108))/(xx[1]-xx[0]),scale*1.65);
+    const horizontalScale=(w-(w<430?74:108))/(xx[1]-xx[0]);
     const screen=(x,y,z)=>{
       const p=project(x,y,z);
       return [w/2+(p[0]-(xx[0]+xx[1])/2)*horizontalScale,h/2-4+(p[1]-(yy[0]+yy[1])/2)*scale,p[2]];
@@ -71,6 +71,20 @@ const responseSurface = (() => {
     for(const {face} of sorted){
       const tint=temperature(face.reduce((s,i)=>s+model.points[i][5],0)/face.length);
       const poly=face.map(i=>projected[i]);path(poly,tint,"rgba(255,255,248,.45)",.6);
+    }
+    // Integer GVI isolines interpolate only within observed-support mesh faces.
+    for(let level=Math.ceil(limits.z[0]);level<=limits.z[1];level++){
+      for(const face of faces){
+        const hits=[];
+        for(let e=0;e<face.length;e++){
+          const a=model.points[face[e]],b=model.points[face[(e+1)%face.length]];
+          if((a[4]<=level&&b[4]>level)||(b[4]<=level&&a[4]>level)){
+            const f=(level-a[4])/(b[4]-a[4]);
+            hits.push(screen(norm(a[2]+f*(b[2]-a[2]),limits.x),norm(a[3]+f*(b[3]-a[3]),limits.y),norm(level,limits.z)));
+          }
+        }
+        if(hits.length===2)path(hits,null,level===0?"rgba(32,65,60,.65)":"rgba(32,65,60,.32)",level===0?1.4:1.0);
+      }
     }
     for(const i of model.isolated){
       const p=projected[i];ctx.fillStyle=temperature(model.points[i][5]);ctx.beginPath();ctx.arc(p[0],p[1],2.5,0,2*Math.PI);ctx.fill();
@@ -158,7 +172,7 @@ const responseSurface = (() => {
     const turns={ArrowLeft:[-.12,0],ArrowRight:[.12,0],ArrowUp:[0,.1],ArrowDown:[0,-.1]};
     if(turns[e.key]){e.preventDefault();rotate(...turns[e.key]);}
   };
-  id("resetMesh").onclick=()=>{view.angle=-.70;view.tilt=.44;draw();};
+  id("resetMesh").onclick=()=>{view.angle=-1.02;view.tilt=.52;draw();};
   id("meshMarkers").onclick=e=>{const btn=e.target.closest("[data-mark]");if(btn&&model){selected=model.markers[btn.dataset.mark];selectedGoal=btn.dataset.mark;readout();draw();}};
   new ResizeObserver(draw).observe(canvas);
   return {update};

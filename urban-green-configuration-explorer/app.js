@@ -191,7 +191,7 @@ function renderBalance(key,surface,custom=false) {
     byId('meshCaption').textContent=surface.points.length.toLocaleString('en-US')+' supported configurations'+details;
   }
 }
-function initializeSliders(key='All|Mid|Higher|Higher') {
+function initializeSliders(key='All|High|Higher|Higher') {
   activePreset=key;
   settings=window.surfaceContext.presets[key].slice();
   updateSliderLimits();renderBalance(key,window.surfaceModels[key]);

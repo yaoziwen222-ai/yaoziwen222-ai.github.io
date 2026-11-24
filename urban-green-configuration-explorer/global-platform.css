@@ -21,3 +21,5 @@
 #meshMarkers button:disabled{opacity:.5;cursor:default}
 .surfaceMethod #choice:empty{display:none}
 @media(max-width:760px){#meshComparison{text-align:left}.meshHead h2{font-size:16px}}
+
+@media(min-width:761px){#mesh{height:clamp(430px,40vw,600px);}}
